@@ -1,0 +1,11 @@
+Parameter,Value,Unit,Description
+C_fixed,50000,COP/vehicle,Fixed activation cost per vehicle
+C_dist,2500,COP/km,Variable cost per kilometer (maintenance and wear)
+C_time,7600,COP/hour,Urban driver hourly cost
+fuel_price,16300,COP/gallon,Gasoline price
+fuel_efficiency_van_small_min,35,km/gallon,Small van minimum fuel efficiency
+fuel_efficiency_van_small_max,45,km/gallon,Small van maximum fuel efficiency
+fuel_efficiency_van_medium_min,25,km/gallon,Medium van minimum fuel efficiency
+fuel_efficiency_van_medium_max,35,km/gallon,Medium van maximum fuel efficiency
+fuel_efficiency_truck_light_min,22,km/gallon,Light truck minimum fuel efficiency
+fuel_efficiency_truck_light_max,28,km/gallon,Light truck maximum fuel efficiency
