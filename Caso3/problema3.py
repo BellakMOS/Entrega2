@@ -401,164 +401,180 @@ for v in Problem3.V:
             total += Problem3.dist[i, j]
     print(f"{v}: {total:.2f} km")
 
+
+
+import pandas as pd
+import pyomo.environ as pyo
+import folium
+from collections import defaultdict
+
+print("\n=== INICIANDO VERIFICADOR CASO 3 ===\n")
+
 rows = []
 
-for v in Problem3.V:
-    # Solo consideramos vehículos usados
-    if Problem3.y[v].value is None or Problem3.y[v].value < 0.5:
-        continue
+# --- 1. Detectar depot REAL por vehículo ---
+def detectar_depot(v):
+    """Encuentra el depot por el cual sale el vehículo v."""
+    for (i, j) in Problem3.A:
+        val = Problem3.x[v, (i, j)].value
+        if val is not None and val > 0.5 and i in Problem3.D:
+            return i
+    return None
 
-    depot = vehicle_depot[v]
 
-    # Reconstruir ruta a partir de x[v,(i,j)]
+# --- 2. Construcción robusta de rutas ---
+def construir_ruta(v, depot):
+    """Reconstruye la ruta siguiendo arcos x[v,i,j] en orden correcto."""
     ruta = [depot]
-    current = depot
-    visitados = []
+    actual = depot
+    visitados = set()
 
-    while True:
-        # Buscar el siguiente nodo j tal que x[v,(current,j)] = 1
+    MAX_ITER = 200  # evita loops infinitos
+
+    for _ in range(MAX_ITER):
+
         siguientes = [
             j for (i, j) in Problem3.A
-            if i == current and (Problem3.x[v, (i, j)].value is not None) and Problem3.x[v, (i, j)].value > 0.5
+            if i == actual and (Problem3.x[v, (i, j)].value or 0) > 0.5
         ]
 
         if not siguientes:
-            # No hay más arcos saliendo
-            break
+            break  # no hay más arcos
 
         j = siguientes[0]
         ruta.append(j)
 
         if j in Problem3.C:
-            visitados.append(j)
+            visitados.add(j)
 
         if j == depot:
-            # Cerramos el ciclo
             break
 
-        current = j
+        actual = j
 
-    # Si la ruta no cerró bien, la ignoramos
+    return ruta, list(visitados)
+
+
+# --- 3. Recorrer vehículos usados ---
+for v in Problem3.V:
+
+    if Problem3.y[v].value is None or Problem3.y[v].value < 0.5:
+        continue  # vehículo no usado
+
+    depot_v = detectar_depot(v)
+    if depot_v is None:
+        continue
+
+    ruta, visitados = construir_ruta(v, depot_v)
+
     if len(ruta) < 2:
         continue
 
-    # InitialLoad = suma de demandas de los clientes atendidos
-    initial_load = sum(pyo.value(Problem3.demand[c]) for c in visitados)
+    # InitialLoad
+    initial_load = sum(Problem3.demand[c] for c in visitados)
 
     # ClientsServed
     clients_served = len(visitados)
 
-    # DemandsSatisfied como lista separada por guiones
-    demands_list = [pyo.value(Problem3.demand[c]) for c in visitados]
-    demands_str = "-".join(str(int(d)) for d in demands_list)
+    # DemandsSatisfied -> guiones SIN espacios
+    demands_str = "-".join(str(int(Problem3.demand[c])) for c in visitados)
 
-    # RouteSequence: "CD01 - C005 - C023 - CD01"
-    route_seq_str = " - ".join(ruta)
+    # RouteSequence -> SIN espacios
+    route_seq_str = "-".join(ruta)
 
-    # Distancia y tiempo totales
+    # TotalDistance y TotalTime
     total_dist = 0.0
     total_time_min = 0.0
 
     for i, j in zip(ruta[:-1], ruta[1:]):
         if (i, j) in Problem3.A:
             total_dist += float(pyo.value(Problem3.dist[i, j]))
-            total_time_min += float(pyo.value(Problem3.time[i, j]) * 60.0)  # horas -> minutos
+            total_time_min += float(pyo.value(Problem3.time[i, j]) * 60)
 
-    # FuelCost por vehículo usando la misma lógica de la FO
+    # Fuel Cost
     dist_v = float(pyo.value(Problem3.d[v]))
-    fuel_cost = float(pyo.value(Problem3.fuel_price)) * (dist_v / eficiencia_de(v))
+    eff = eficiencia_de(v)
+    fuel_cost = float(Problem3.fuel_price) * (dist_v / eff)
 
     rows.append({
         "VehicleId": v,
-        "DepotId": depot,
+        "DepotId": depot_v,
         "InitialLoad": initial_load,
         "RouteSequence": route_seq_str,
         "ClientsServed": clients_served,
         "DemandsSatisfied": demands_str,
-        "TotalDistance": total_dist,
-        "TotalTime": total_time_min,
-        "FuelCost": fuel_cost
+        "TotalDistance": round(total_dist, 3),
+        "TotalTime": round(total_time_min, 3),
+        "FuelCost": round(fuel_cost, 3)
     })
 
+
+# --- 4. Exportar CSV EXACTO ---
 df_verif = pd.DataFrame(rows)
 
-# Escribir header EXACTO y luego las filas
-with open("verificacion_caso3.csv", "w", encoding="utf-8") as f:
-    f.write("VehicleId , DepotId , InitialLoad , RouteSequence , ClientsServed , DemandsSatisfied , TotalDistance , TotalTime , FuelCost\n")
-    df_verif.to_csv(f, index=False, header=False)
+df_verif.to_csv(
+    "verificacion_caso3.csv",
+    index=False,
+    float_format="%.3f",
+    header=[
+        "VehicleId",
+        "DepotId",
+        "InitialLoad",
+        "RouteSequence",
+        "ClientsServed",
+        "DemandsSatisfied",
+        "TotalDistance",
+        "TotalTime",
+        "FuelCost"
+    ]
+)
+
+print("\nArchivo generado: verificacion_caso3.csv")
 
 
+###############################################
+#              MAPA FOLIUM                  
+###############################################
 
-
-# Construimos tabla de nodos con coordenadas
 nodes = pd.concat([
     clientes[["StandardizedID", "Longitude", "Latitude"]].rename(columns={"StandardizedID": "NodeID"}),
     depots[["StandardizedID", "Longitude", "Latitude"]].rename(columns={"StandardizedID": "NodeID"})
-]).reset_index(drop=True)
+])
 
-coord_map = {
-    row["NodeID"]: (row["Latitude"], row["Longitude"])
-    for _, row in nodes.iterrows()
-}
+coord = {r["NodeID"]: (r["Latitude"], r["Longitude"]) for _, r in nodes.iterrows()}
 
-# Centro del mapa: promedio de clientes
-center_lat = clientes["Latitude"].mean()
-center_lon = clientes["Longitude"].mean()
+m = folium.Map(location=[clientes["Latitude"].mean(), clientes["Longitude"].mean()], zoom_start=11)
 
-m = folium.Map(location=[center_lat, center_lon], zoom_start=11)
-
-# Marcar depots
-for _, row in depots.iterrows():
+# Depots
+for _, d in depots.iterrows():
     folium.Marker(
-        [row["Latitude"], row["Longitude"]],
-        popup=row["StandardizedID"],
-        icon=folium.Icon(color="red", icon="home")
+        [d["Latitude"], d["Longitude"]],
+        popup=d["StandardizedID"],
+        icon=folium.Icon(color="red")
     ).add_to(m)
 
-# Colores para rutas
 colors = [
-    "blue", "green", "purple", "orange", "darkred", "cadetblue",
-    "darkblue", "darkgreen", "lightred", "lightblue", "lightgreen"
+    "blue", "green", "purple", "orange", "black",
+    "pink", "brown", "cadetblue", "darkgreen"
 ]
 
 color_idx = 0
 
-for v in Problem3.V:
-    if Problem3.y[v].value is None or Problem3.y[v].value < 0.5:
-        continue
-
-    depot = vehicle_depot[v]
-    ruta = [depot]
-    current = depot
-
-    while True:
-        siguientes = [
-            j for (i, j) in Problem3.A
-            if i == current and (Problem3.x[v, (i, j)].value is not None) and Problem3.x[v, (i, j)].value > 0.5
-        ]
-        if not siguientes:
-            break
-        j = siguientes[0]
-        ruta.append(j)
-        if j == depot:
-            break
-        current = j
-
-    if len(ruta) < 2:
-        continue
-
-    coords = [coord_map[n] for n in ruta if n in coord_map]
+for record in rows:
+    ruta = record["RouteSequence"].split("-")
+    coords = [coord[n] for n in ruta if n in coord]
 
     folium.PolyLine(
         coords,
+        color=colors[color_idx % len(colors)],
         weight=4,
         opacity=0.8,
-        color=colors[color_idx % len(colors)],
-        tooltip=f"Vehículo {v}"
+        tooltip=f"Vehículo {record['VehicleId']}"
     ).add_to(m)
 
     color_idx += 1
 
-# Guardar mapa
 m.save("mapa_caso3.html")
-print("Mapa guardado como mapa_caso3.html")
+print("Mapa generado: mapa_caso3.html")
+
+print("\n=== VERIFICADOR FINALIZADO ===\n")
