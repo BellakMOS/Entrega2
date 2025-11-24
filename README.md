@@ -12,7 +12,7 @@ Se encuentran tres carpetas, una por cada caso.
 
 Dentro de cada carpeta se encuentra:
 
-* La implementación de la minimización
+* La implementación de la minimización: para correr el notebook sólo se cargan los datos en el entorno :)
 * Su respectivo archivo de verificación.
 * Datos que se usaron para cada caso.
 
