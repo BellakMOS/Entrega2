@@ -42,10 +42,6 @@ for i in nodes:
             dist[(i, j)] = haversine(lat1, lon1, lat2, lon2)
 
 
-# =====================================================
-# 3. PYOMO MULTIDEPOT MODEL
-# =====================================================
-
 model = pyo.ConcreteModel()
 
 model.D = pyo.Set(initialize=depots)
@@ -55,8 +51,7 @@ model.V = pyo.Set(initialize=vehicles)
 
 model.demand = pyo.Param(model.C, initialize=demand_dict)
 model.cap_vehicle = pyo.Param(model.V, initialize=vehicle_cap_dict)
-filtered_cap_depot = {d: depot_cap_dict[d] for d in depots}  # SOLO 3 CDs
-
+filtered_cap_depot = {d: depot_cap_dict[d] for d in depots}
 model.cap_depot = pyo.Param(model.D, initialize=filtered_cap_depot)
 
 model.dist = pyo.Param(model.N, model.N, initialize=dist)
@@ -142,3 +137,72 @@ solver = pyo.SolverFactory("highs")
 result = solver.solve(model, tee=True)
 print(result.solver.status)
 print(result.solver.termination_condition)
+
+
+def get_vehicle_depot(v):
+    """Return assigned depot or None."""
+    for d in depots:
+        if pyo.value(model.y[v, d]) > 0.5:
+            return d
+    return None
+
+
+def get_route(v):
+    depot = get_vehicle_depot(v)
+    if depot is None:
+        return [], []
+
+    arcs = [(i, j) for i in nodes for j in nodes
+            if i != j and pyo.value(model.x[v, i, j]) > 0.5]
+
+    if len(arcs) == 0:
+        return [], []
+
+    next_dict = {}
+    for i, j in arcs:
+        next_dict[i] = j
+
+    route = [depot]
+    visited = set()
+    current = depot
+
+    for _ in range(len(nodes)):
+        if current not in next_dict:
+            break
+        nxt = next_dict[current]
+        route.append(nxt)
+        if nxt in clients:
+            visited.add(nxt)
+        current = nxt
+
+    if route[-1] != depot:
+        route.append(depot)
+
+    return route, list(visited)
+
+
+rows = []
+for v in vehicles:
+    route, served = get_route(v)
+    if len(served) == 0:
+        continue
+
+    depot = get_vehicle_depot(v)
+    demands = [demand_dict[c] for c in served]
+
+    total_dist = sum(dist[(route[i], route[i+1])] for i in range(len(route)-1))
+
+    rows.append({
+        "VehicleID": v,
+        "Depot": depot,
+        "Route": "-".join(route),
+        "ClientsServed": len(served),
+        "Demands": "-".join(str(x) for x in demands),
+        "TotalDistance": round(total_dist, 3),
+        "TotalTime": round(total_dist / 25, 3)
+    })
+
+df = pd.DataFrame(rows)
+df.to_csv("verificacion_caso2.csv", index=False)
+
+print(">>> verificacion_caso2.csv generado exitosamente.")
