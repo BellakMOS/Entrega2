@@ -94,16 +94,17 @@ print("\nListo: matrices guardadas en distances.csv y times.csv")
 import pandas as pd
 import numpy as np
 import pyomo.environ as pyo
+import folium
 
 
-clientes = pd.read_csv('clients.csv')
-depots = pd.read_csv('depots.csv')
-parametros = pd.read_csv('parameters_urban.csv')
-vehiculos = pd.read_csv('vehicles.csv')
+clientes = pd.read_csv('Caso3/clients.csv')
+depots = pd.read_csv('Caso3/depots.csv')
+parametros = pd.read_csv('Caso3/parameters_urban.csv')
+vehiculos = pd.read_csv('Caso3/vehicles.csv')
 
-# Distancias y tiempos pre-calculados con OSRM
-distances = pd.read_csv("distances.csv")
-times = pd.read_csv("times.csv")
+distances = pd.read_csv("Caso3/distances.csv")
+times = pd.read_csv("Caso3/times.csv")
+
 
 dist_dict = {(row["i"], row["j"]): row["dist_km"] for _, row in distances.iterrows()}
 time_dict = {(row["i"], row["j"]): row["time_hr"] for _, row in times.iterrows()}
@@ -276,7 +277,6 @@ Problem3.flow = pyo.Constraint(Problem3.V, Problem3.N, rule=flow_balance_rule)
 default_depot = depots["StandardizedID"].iloc[0]
 vehicle_depot = {v: default_depot for v in Problem3.V}
 
-# 3a. Inicio en SU depot
 def enforce_start(model, v):
     depot_v = vehicle_depot[v]
     return sum(
@@ -286,7 +286,6 @@ def enforce_start(model, v):
 
 Problem3.start = pyo.Constraint(Problem3.V, rule=enforce_start)
 
-# 3b. Fin en SU depot
 def enforce_end(model, v):
     depot_v = vehicle_depot[v]
     return sum(
@@ -344,11 +343,11 @@ def range_rule(model, v):
 
 Problem3.range_cons = pyo.Constraint(Problem3.V, rule=range_rule)
 
-print("⚡ Iniciando solver HiGHS optimizado...")
+print("Iniciando solver...")
 
 solver = pyo.SolverFactory("highs")
 
-solver.options["time_limit"] = 200        # límite duro de tiempo (segundos)
+solver.options["time_limit"] = 600        # límite duro de tiempo (segundos)
 solver.options["presolve"] = "on"
 solver.options["parallel"] = "on"
 solver.options["threads"] = 0               # 0 = todos los cores
@@ -401,10 +400,6 @@ for v in Problem3.V:
         if val_x is not None and val_x > 0.5:
             total += Problem3.dist[i, j]
     print(f"{v}: {total:.2f} km")
-
-import pandas as pd
-import pyomo.environ as pyo
-
 
 rows = []
 
@@ -492,7 +487,7 @@ with open("verificacion_caso3.csv", "w", encoding="utf-8") as f:
     f.write("VehicleId , DepotId , InitialLoad , RouteSequence , ClientsServed , DemandsSatisfied , TotalDistance , TotalTime , FuelCost\n")
     df_verif.to_csv(f, index=False, header=False)
 
-import folium
+
 
 
 # Construimos tabla de nodos con coordenadas
