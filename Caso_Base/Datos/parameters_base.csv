@@ -1,0 +1,3 @@
+Parameter,Value,Unit,Description
+fuel_price,16300,COP/gallon,Standard gasoline price
+fuel_efficiency_typical,30,km/gallon,Typical vehicle fuel efficiency estimate
